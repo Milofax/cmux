@@ -7492,9 +7492,12 @@ private struct SidebarHelpMenuButton: View {
         }
         .buttonStyle(SidebarFooterIconButtonStyle())
         .frame(width: buttonSize, height: buttonSize, alignment: .center)
-        .popover(isPresented: $isPopoverPresented, arrowEdge: .leading) {
+        .background(ArrowlessPopoverAnchor(
+            isPresented: $isPopoverPresented,
+            preferredEdge: .minY
+        ) {
             helpPopover
-        }
+        })
         .accessibilityElement(children: .ignore)
         .help(helpTitle)
         .accessibilityLabel(helpTitle)
@@ -7653,6 +7656,121 @@ private struct SidebarHelpMenuButton: View {
         }
         return shortcut
     }
+}
+
+private struct ArrowlessPopoverAnchor<PopoverContent: View>: NSViewRepresentable {
+    @Binding var isPresented: Bool
+    let preferredEdge: NSRectEdge
+    @ViewBuilder let content: () -> PopoverContent
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        if isPresented {
+            if context.coordinator.panel == nil {
+                let hostingView = NSHostingView(rootView:
+                    content()
+                        .background(VisualEffectView(material: .popover, blendingMode: .behindWindow))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
+                )
+                hostingView.translatesAutoresizingMaskIntoConstraints = false
+                let fittingSize = hostingView.fittingSize
+
+                guard let parentWindow = nsView.window else { return }
+                let anchorRect = nsView.convert(nsView.bounds, to: nil)
+                let anchorScreenRect = parentWindow.convertToScreen(anchorRect)
+
+                let panelX = anchorScreenRect.midX - fittingSize.width / 2
+                let panelY = anchorScreenRect.maxY + 4
+                let panelFrame = NSRect(
+                    x: panelX,
+                    y: panelY,
+                    width: fittingSize.width,
+                    height: fittingSize.height
+                )
+
+                let panel = NSPanel(
+                    contentRect: panelFrame,
+                    styleMask: [.borderless, .nonactivatingPanel],
+                    backing: .buffered,
+                    defer: false
+                )
+                panel.isOpaque = false
+                panel.backgroundColor = .clear
+                panel.level = .popUpMenu
+                panel.hidesOnDeactivate = true
+                panel.contentView = hostingView
+                panel.isMovable = false
+
+                let monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { event in
+                    if event.window !== panel {
+                        DispatchQueue.main.async {
+                            isPresented = false
+                        }
+                    }
+                    return event
+                }
+                context.coordinator.eventMonitor = monitor
+
+                parentWindow.addChildWindow(panel, ordered: .above)
+                panel.orderFront(nil)
+                context.coordinator.panel = panel
+            }
+        } else {
+            if let panel = context.coordinator.panel {
+                panel.parent?.removeChildWindow(panel)
+                panel.orderOut(nil)
+                context.coordinator.panel = nil
+            }
+            if let monitor = context.coordinator.eventMonitor {
+                NSEvent.removeMonitor(monitor)
+                context.coordinator.eventMonitor = nil
+            }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(isPresented: $isPresented)
+    }
+
+    final class Coordinator {
+        @Binding var isPresented: Bool
+        var panel: NSPanel?
+        var eventMonitor: Any?
+
+        init(isPresented: Binding<Bool>) {
+            _isPresented = isPresented
+        }
+
+        deinit {
+            if let monitor = eventMonitor {
+                NSEvent.removeMonitor(monitor)
+            }
+            if let panel = panel {
+                panel.parent?.removeChildWindow(panel)
+                panel.orderOut(nil)
+            }
+        }
+    }
+}
+
+private struct VisualEffectView: NSViewRepresentable {
+    let material: NSVisualEffectView.Material
+    let blendingMode: NSVisualEffectView.BlendingMode
+
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = material
+        view.blendingMode = blendingMode
+        view.state = .active
+        return view
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
 }
 
 private struct SidebarFooterIconButtonStyle: ButtonStyle {
