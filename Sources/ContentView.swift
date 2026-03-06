@@ -7492,7 +7492,7 @@ private struct SidebarHelpMenuButton: View {
         }
         .buttonStyle(SidebarFooterIconButtonStyle())
         .frame(width: buttonSize, height: buttonSize, alignment: .center)
-        .popover(isPresented: $isPopoverPresented, arrowEdge: .bottom) {
+        .popover(isPresented: $isPopoverPresented, arrowEdge: .leading) {
             helpPopover
         }
         .accessibilityElement(children: .ignore)
