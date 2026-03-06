@@ -7684,10 +7684,10 @@ private struct ArrowlessPopoverAnchor<PopoverContent: View>: NSViewRepresentable
             // left by the hidden arrow (the arrow space is ~22pt).
             var positioningRect = nsView.bounds
             switch preferredEdge {
-            case .maxY: positioningRect.origin.y += 22
-            case .minY: positioningRect.origin.y -= 22
-            case .maxX: positioningRect.origin.x += 22
-            case .minX: positioningRect.origin.x -= 22
+            case .maxY: positioningRect.origin.y += 16
+            case .minY: positioningRect.origin.y -= 16
+            case .maxX: positioningRect.origin.x += 16
+            case .minX: positioningRect.origin.x -= 16
             default: break
             }
             popover.show(relativeTo: positioningRect, of: nsView, preferredEdge: preferredEdge)
