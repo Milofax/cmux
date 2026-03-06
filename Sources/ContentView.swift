@@ -7494,10 +7494,7 @@ private struct SidebarHelpMenuButton: View {
         .frame(width: buttonSize, height: buttonSize, alignment: .center)
         .popover(isPresented: $isPopoverPresented, arrowEdge: .leading) {
             helpPopover
-                .background(
-                    Color(nsColor: .windowBackgroundColor)
-                        .padding(-80)
-                )
+                .background(PopoverArrowBackgroundSetter())
         }
         .accessibilityElement(children: .ignore)
         .help(helpTitle)
@@ -7656,6 +7653,34 @@ private struct SidebarHelpMenuButton: View {
             return fallback
         }
         return shortcut
+    }
+}
+
+/// Sets the popover's frame view background (including the arrow) to match the popover body.
+/// Works by walking up the view hierarchy once the popover window is attached and inserting
+/// a layer-backed background view behind the frame view that includes the arrow shape.
+private struct PopoverArrowBackgroundSetter: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = PopoverArrowBackgroundView()
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+private final class PopoverArrowBackgroundView: NSView {
+    private var hasInsertedBackground = false
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard !hasInsertedBackground, let frameView = window?.contentView?.superview else { return }
+        hasInsertedBackground = true
+
+        let backgroundView = NSView(frame: frameView.bounds)
+        backgroundView.wantsLayer = true
+        backgroundView.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        backgroundView.autoresizingMask = [.width, .height]
+        frameView.addSubview(backgroundView, positioned: .below, relativeTo: frameView)
     }
 }
 
