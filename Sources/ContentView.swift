@@ -7658,9 +7658,7 @@ private struct SidebarHelpMenuButton: View {
     }
 }
 
-/// Presents an NSPopover without an arrow by moving the positioning view offscreen
-/// after showing. NSPopover automatically hides the arrow when the positioning view
-/// is outside the visible rect.
+/// Presents an NSPopover without an arrow using the shouldHideAnchor KVC trick.
 private struct ArrowlessPopoverAnchor<PopoverContent: View>: NSViewRepresentable {
     @Binding var isPresented: Bool
     let preferredEdge: NSRectEdge
@@ -7677,19 +7675,12 @@ private struct ArrowlessPopoverAnchor<PopoverContent: View>: NSViewRepresentable
             let popover = NSPopover()
             popover.behavior = .semitransient
             popover.animates = true
+            popover.setValue(true, forKeyPath: "shouldHideAnchor")
             popover.contentViewController = NSHostingController(rootView: content())
             popover.delegate = context.coordinator
             context.coordinator.popover = popover
 
-            // Create a temporary positioning view at the anchor's location
-            let positioningView = NSView(frame: nsView.bounds)
-            nsView.addSubview(positioningView)
-            context.coordinator.positioningView = positioningView
-
-            popover.show(relativeTo: .zero, of: positioningView, preferredEdge: preferredEdge)
-
-            // Move positioning view offscreen so NSPopover hides the arrow
-            positioningView.frame = NSRect(x: 0, y: -200, width: 10, height: 10)
+            popover.show(relativeTo: nsView.bounds, of: nsView, preferredEdge: preferredEdge)
         } else {
             context.coordinator.dismiss()
         }
@@ -7702,7 +7693,6 @@ private struct ArrowlessPopoverAnchor<PopoverContent: View>: NSViewRepresentable
     final class Coordinator: NSObject, NSPopoverDelegate {
         @Binding var isPresented: Bool
         var popover: NSPopover?
-        var positioningView: NSView?
 
         init(isPresented: Binding<Bool>) {
             _isPresented = isPresented
@@ -7711,14 +7701,10 @@ private struct ArrowlessPopoverAnchor<PopoverContent: View>: NSViewRepresentable
         func dismiss() {
             popover?.performClose(nil)
             popover = nil
-            positioningView?.removeFromSuperview()
-            positioningView = nil
         }
 
         func popoverDidClose(_ notification: Notification) {
             popover = nil
-            positioningView?.removeFromSuperview()
-            positioningView = nil
             if isPresented {
                 isPresented = false
             }
