@@ -7492,10 +7492,12 @@ private struct SidebarHelpMenuButton: View {
         }
         .buttonStyle(SidebarFooterIconButtonStyle())
         .frame(width: buttonSize, height: buttonSize, alignment: .center)
-        .popover(isPresented: $isPopoverPresented, arrowEdge: .leading) {
+        .background(ArrowlessPopoverAnchor(
+            isPresented: $isPopoverPresented,
+            preferredEdge: .maxY
+        ) {
             helpPopover
-                .background(PopoverArrowBackgroundSetter())
-        }
+        })
         .accessibilityElement(children: .ignore)
         .help(helpTitle)
         .accessibilityLabel(helpTitle)
@@ -7656,31 +7658,57 @@ private struct SidebarHelpMenuButton: View {
     }
 }
 
-/// Sets the popover's frame view background (including the arrow) to match the popover body.
-/// Works by walking up the view hierarchy once the popover window is attached and inserting
-/// a layer-backed background view behind the frame view that includes the arrow shape.
-private struct PopoverArrowBackgroundSetter: NSViewRepresentable {
+/// Presents an NSPopover without an arrow using the shouldHideAnchor KVC trick.
+private struct ArrowlessPopoverAnchor<PopoverContent: View>: NSViewRepresentable {
+    @Binding var isPresented: Bool
+    let preferredEdge: NSRectEdge
+    @ViewBuilder let content: () -> PopoverContent
+
     func makeNSView(context: Context) -> NSView {
-        let view = PopoverArrowBackgroundView()
-        return view
+        NSView()
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {}
-}
+    func updateNSView(_ nsView: NSView, context: Context) {
+        if isPresented {
+            guard context.coordinator.popover == nil else { return }
 
-private final class PopoverArrowBackgroundView: NSView {
-    private var hasInsertedBackground = false
+            let popover = NSPopover()
+            popover.behavior = .semitransient
+            popover.animates = true
+            popover.setValue(true, forKeyPath: "shouldHideAnchor")
+            popover.contentViewController = NSHostingController(rootView: content())
+            popover.delegate = context.coordinator
+            context.coordinator.popover = popover
 
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        guard !hasInsertedBackground, let frameView = window?.contentView?.superview else { return }
-        hasInsertedBackground = true
+            popover.show(relativeTo: nsView.bounds, of: nsView, preferredEdge: preferredEdge)
+        } else {
+            context.coordinator.dismiss()
+        }
+    }
 
-        let backgroundView = NSView(frame: frameView.bounds)
-        backgroundView.wantsLayer = true
-        backgroundView.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-        backgroundView.autoresizingMask = [.width, .height]
-        frameView.addSubview(backgroundView, positioned: .below, relativeTo: frameView)
+    func makeCoordinator() -> Coordinator {
+        Coordinator(isPresented: $isPresented)
+    }
+
+    final class Coordinator: NSObject, NSPopoverDelegate {
+        @Binding var isPresented: Bool
+        var popover: NSPopover?
+
+        init(isPresented: Binding<Bool>) {
+            _isPresented = isPresented
+        }
+
+        func dismiss() {
+            popover?.performClose(nil)
+            popover = nil
+        }
+
+        func popoverDidClose(_ notification: Notification) {
+            popover = nil
+            if isPresented {
+                isPresented = false
+            }
+        }
     }
 }
 
