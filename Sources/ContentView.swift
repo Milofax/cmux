@@ -7668,6 +7668,18 @@ private struct ArrowlessPopoverAnchor<PopoverContent: View>: NSViewRepresentable
         NSView()
     }
 
+    private static func hideArrowView(in view: NSView?) {
+        guard let view else { return }
+        let className = String(describing: type(of: view))
+        if className.localizedCaseInsensitiveContains("arrow") {
+            view.isHidden = true
+            return
+        }
+        for subview in view.subviews {
+            hideArrowView(in: subview)
+        }
+    }
+
     func updateNSView(_ nsView: NSView, context: Context) {
         if isPresented {
             guard context.coordinator.popover == nil else { return }
@@ -7675,12 +7687,18 @@ private struct ArrowlessPopoverAnchor<PopoverContent: View>: NSViewRepresentable
             let popover = NSPopover()
             popover.behavior = .semitransient
             popover.animates = true
-            popover.setValue(true, forKeyPath: "shouldHideAnchor")
             popover.contentViewController = NSHostingController(rootView: content())
             popover.delegate = context.coordinator
             context.coordinator.popover = popover
 
-            popover.show(relativeTo: .zero, of: nsView, preferredEdge: preferredEdge)
+            popover.show(relativeTo: nsView.bounds, of: nsView, preferredEdge: preferredEdge)
+
+            // Walk the popover window's view hierarchy to find and hide the arrow view.
+            // The arrow is an _NSPopoverFrameAXBorderView or similar private view inside
+            // the frame. We find it by looking for the view whose className contains "Arrow".
+            if let popoverWindow = popover.contentViewController?.view.window {
+                Self.hideArrowView(in: popoverWindow.contentView?.superview)
+            }
         } else {
             context.coordinator.dismiss()
         }
