@@ -7494,7 +7494,7 @@ private struct SidebarHelpMenuButton: View {
         .frame(width: buttonSize, height: buttonSize, alignment: .center)
         .background(ArrowlessPopoverAnchor(
             isPresented: $isPopoverPresented,
-            preferredEdge: .minY
+            preferredEdge: .maxY
         ) {
             helpPopover
         })
@@ -7658,78 +7658,40 @@ private struct SidebarHelpMenuButton: View {
     }
 }
 
+/// Presents an NSPopover without an arrow by moving the positioning view offscreen
+/// after showing. NSPopover automatically hides the arrow when the positioning view
+/// is outside the visible rect.
 private struct ArrowlessPopoverAnchor<PopoverContent: View>: NSViewRepresentable {
     @Binding var isPresented: Bool
     let preferredEdge: NSRectEdge
     @ViewBuilder let content: () -> PopoverContent
 
     func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        return view
+        NSView()
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
         if isPresented {
-            if context.coordinator.panel == nil {
-                let hostingView = NSHostingView(rootView:
-                    content()
-                        .background(VisualEffectView(material: .popover, blendingMode: .behindWindow))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
-                )
-                hostingView.translatesAutoresizingMaskIntoConstraints = false
-                let fittingSize = hostingView.fittingSize
+            guard context.coordinator.popover == nil else { return }
 
-                guard let parentWindow = nsView.window else { return }
-                let anchorRect = nsView.convert(nsView.bounds, to: nil)
-                let anchorScreenRect = parentWindow.convertToScreen(anchorRect)
+            let popover = NSPopover()
+            popover.behavior = .semitransient
+            popover.animates = true
+            popover.contentViewController = NSHostingController(rootView: content())
+            popover.delegate = context.coordinator
+            context.coordinator.popover = popover
 
-                let panelX = anchorScreenRect.midX - fittingSize.width / 2
-                let panelY = anchorScreenRect.maxY + 4
-                let panelFrame = NSRect(
-                    x: panelX,
-                    y: panelY,
-                    width: fittingSize.width,
-                    height: fittingSize.height
-                )
+            // Create a temporary positioning view at the anchor's location
+            let positioningView = NSView(frame: nsView.bounds)
+            nsView.addSubview(positioningView)
+            context.coordinator.positioningView = positioningView
 
-                let panel = NSPanel(
-                    contentRect: panelFrame,
-                    styleMask: [.borderless, .nonactivatingPanel],
-                    backing: .buffered,
-                    defer: false
-                )
-                panel.isOpaque = false
-                panel.backgroundColor = .clear
-                panel.level = .popUpMenu
-                panel.hidesOnDeactivate = true
-                panel.contentView = hostingView
-                panel.isMovable = false
+            popover.show(relativeTo: .zero, of: positioningView, preferredEdge: preferredEdge)
 
-                let monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { event in
-                    if event.window !== panel {
-                        DispatchQueue.main.async {
-                            isPresented = false
-                        }
-                    }
-                    return event
-                }
-                context.coordinator.eventMonitor = monitor
-
-                parentWindow.addChildWindow(panel, ordered: .above)
-                panel.orderFront(nil)
-                context.coordinator.panel = panel
-            }
+            // Move positioning view offscreen so NSPopover hides the arrow
+            positioningView.frame = NSRect(x: 0, y: -200, width: 10, height: 10)
         } else {
-            if let panel = context.coordinator.panel {
-                panel.parent?.removeChildWindow(panel)
-                panel.orderOut(nil)
-                context.coordinator.panel = nil
-            }
-            if let monitor = context.coordinator.eventMonitor {
-                NSEvent.removeMonitor(monitor)
-                context.coordinator.eventMonitor = nil
-            }
+            context.coordinator.dismiss()
         }
     }
 
@@ -7737,40 +7699,31 @@ private struct ArrowlessPopoverAnchor<PopoverContent: View>: NSViewRepresentable
         Coordinator(isPresented: $isPresented)
     }
 
-    final class Coordinator {
+    final class Coordinator: NSObject, NSPopoverDelegate {
         @Binding var isPresented: Bool
-        var panel: NSPanel?
-        var eventMonitor: Any?
+        var popover: NSPopover?
+        var positioningView: NSView?
 
         init(isPresented: Binding<Bool>) {
             _isPresented = isPresented
         }
 
-        deinit {
-            if let monitor = eventMonitor {
-                NSEvent.removeMonitor(monitor)
-            }
-            if let panel = panel {
-                panel.parent?.removeChildWindow(panel)
-                panel.orderOut(nil)
+        func dismiss() {
+            popover?.performClose(nil)
+            popover = nil
+            positioningView?.removeFromSuperview()
+            positioningView = nil
+        }
+
+        func popoverDidClose(_ notification: Notification) {
+            popover = nil
+            positioningView?.removeFromSuperview()
+            positioningView = nil
+            if isPresented {
+                isPresented = false
             }
         }
     }
-}
-
-private struct VisualEffectView: NSViewRepresentable {
-    let material: NSVisualEffectView.Material
-    let blendingMode: NSVisualEffectView.BlendingMode
-
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = material
-        view.blendingMode = blendingMode
-        view.state = .active
-        return view
-    }
-
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
 }
 
 private struct SidebarFooterIconButtonStyle: ButtonStyle {
