@@ -7075,16 +7075,6 @@ private final class FeedbackComposerMessageEditorView: NSView {
     }
 }
 
-private enum SidebarHelpMenuAction {
-    case keyboardShortcuts
-    case docs
-    case changelog
-    case github
-    case githubIssues
-    case checkForUpdates
-    case sendFeedback
-}
-
 private struct SidebarFeedbackComposerSheet: View {
     @AppStorage(FeedbackComposerSettings.storedEmailKey) private var email = ""
     @Environment(\.dismiss) private var dismiss
@@ -7460,163 +7450,147 @@ private struct SidebarFeedbackComposerSheet: View {
 }
 
 private struct SidebarHelpMenuButton: View {
-    private let docsURL = URL(string: "https://cmux.dev/docs")
-    private let changelogURL = URL(string: "https://cmux.dev/docs/changelog")
-    private let githubURL = URL(string: "https://github.com/manaflow-ai/cmux")
-    private let githubIssuesURL = URL(string: "https://github.com/manaflow-ai/cmux/issues")
     private let helpTitle = String(localized: "sidebar.help.button", defaultValue: "Help")
     private let buttonSize: CGFloat = 22
     private let iconSize: CGFloat = 11
-    @AppStorage(KeyboardShortcutSettings.Action.sendFeedback.defaultsKey) private var sendFeedbackShortcutData = Data()
 
     let onSendFeedback: () -> Void
 
-    @State private var isPopoverPresented = false
-
-    private var sendFeedbackShortcutHint: String {
-        decodeShortcut(
-            from: sendFeedbackShortcutData,
-            fallback: KeyboardShortcutSettings.Action.sendFeedback.defaultShortcut
-        ).displayString
-    }
-
     var body: some View {
-        Button {
-            isPopoverPresented.toggle()
-        } label: {
-            Image(systemName: "questionmark.circle")
-                .symbolRenderingMode(.monochrome)
-                .font(.system(size: iconSize, weight: .medium))
-                .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-                .frame(width: buttonSize, height: buttonSize, alignment: .center)
-        }
-        .buttonStyle(SidebarFooterIconButtonStyle())
-        .frame(width: buttonSize, height: buttonSize, alignment: .center)
-        .background(ArrowlessPopoverAnchor(
-            isPresented: $isPopoverPresented,
-            preferredEdge: .maxY
-        ) {
-            helpPopover
-        })
-        .accessibilityElement(children: .ignore)
-        .help(helpTitle)
-        .accessibilityLabel(helpTitle)
-        .accessibilityIdentifier("SidebarHelpMenuButton")
+        SidebarHelpMenuButtonRepresentable(onSendFeedback: onSendFeedback)
+            .frame(width: buttonSize, height: buttonSize, alignment: .center)
+            .accessibilityElement(children: .ignore)
+            .help(helpTitle)
+            .accessibilityLabel(helpTitle)
+            .accessibilityIdentifier("SidebarHelpMenuButton")
+    }
+}
+
+private struct SidebarHelpMenuButtonRepresentable: NSViewRepresentable {
+    let onSendFeedback: () -> Void
+
+    func makeNSView(context: Context) -> NSButton {
+        let button = NSButton()
+        button.bezelStyle = .accessoryBarAction
+        button.isBordered = false
+        button.image = NSImage(systemSymbolName: "questionmark.circle", accessibilityDescription: nil)
+        button.imagePosition = .imageOnly
+        button.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
+        button.contentTintColor = .secondaryLabelColor
+        button.target = context.coordinator
+        button.action = #selector(Coordinator.showMenu(_:))
+        button.setAccessibilityIdentifier("SidebarHelpMenuButton")
+        return button
     }
 
-    private var helpPopover: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            helpOptionButton(
+    func updateNSView(_ nsView: NSButton, context: Context) {
+        context.coordinator.onSendFeedback = onSendFeedback
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onSendFeedback: onSendFeedback)
+    }
+
+    final class Coordinator: NSObject {
+        var onSendFeedback: () -> Void
+
+        private let docsURL = URL(string: "https://cmux.dev/docs")
+        private let changelogURL = URL(string: "https://cmux.dev/docs/changelog")
+        private let githubURL = URL(string: "https://github.com/manaflow-ai/cmux")
+        private let githubIssuesURL = URL(string: "https://github.com/manaflow-ai/cmux/issues")
+
+        init(onSendFeedback: @escaping () -> Void) {
+            self.onSendFeedback = onSendFeedback
+        }
+
+        @objc func showMenu(_ sender: NSButton) {
+            let menu = NSMenu()
+
+            let feedbackItem = NSMenuItem(
                 title: String(localized: "sidebar.help.sendFeedback", defaultValue: "Send Feedback"),
-                action: .sendFeedback,
-                accessibilityIdentifier: "SidebarHelpMenuOptionSendFeedback",
-                isExternalLink: false,
-                shortcutHint: sendFeedbackShortcutHint,
-                trailingSystemImage: "bubble.left.and.text.bubble.right"
+                action: #selector(sendFeedback),
+                keyEquivalent: ""
             )
-            helpOptionButton(
+            feedbackItem.target = self
+            feedbackItem.setAccessibilityIdentifier("SidebarHelpMenuOptionSendFeedback")
+            menu.addItem(feedbackItem)
+
+            let shortcutsItem = NSMenuItem(
                 title: String(localized: "settings.section.keyboardShortcuts", defaultValue: "Keyboard Shortcuts"),
-                action: .keyboardShortcuts,
-                accessibilityIdentifier: "SidebarHelpMenuOptionKeyboardShortcuts",
-                isExternalLink: false
+                action: #selector(openKeyboardShortcuts),
+                keyEquivalent: ""
             )
+            shortcutsItem.target = self
+            shortcutsItem.setAccessibilityIdentifier("SidebarHelpMenuOptionKeyboardShortcuts")
+            menu.addItem(shortcutsItem)
+
+            menu.addItem(.separator())
+
             if docsURL != nil {
-                helpOptionButton(
+                let item = NSMenuItem(
                     title: String(localized: "about.docs", defaultValue: "Docs"),
-                    action: .docs,
-                    accessibilityIdentifier: "SidebarHelpMenuOptionDocs",
-                    isExternalLink: true
+                    action: #selector(openDocs),
+                    keyEquivalent: ""
                 )
+                item.target = self
+                item.setAccessibilityIdentifier("SidebarHelpMenuOptionDocs")
+                menu.addItem(item)
             }
+
             if changelogURL != nil {
-                helpOptionButton(
+                let item = NSMenuItem(
                     title: String(localized: "sidebar.help.changelog", defaultValue: "Changelog"),
-                    action: .changelog,
-                    accessibilityIdentifier: "SidebarHelpMenuOptionChangelog",
-                    isExternalLink: true
+                    action: #selector(openChangelog),
+                    keyEquivalent: ""
                 )
+                item.target = self
+                item.setAccessibilityIdentifier("SidebarHelpMenuOptionChangelog")
+                menu.addItem(item)
             }
+
             if githubURL != nil {
-                helpOptionButton(
+                let item = NSMenuItem(
                     title: String(localized: "about.github", defaultValue: "GitHub"),
-                    action: .github,
-                    accessibilityIdentifier: "SidebarHelpMenuOptionGitHub",
-                    isExternalLink: true
+                    action: #selector(openGitHub),
+                    keyEquivalent: ""
                 )
+                item.target = self
+                item.setAccessibilityIdentifier("SidebarHelpMenuOptionGitHub")
+                menu.addItem(item)
             }
+
             if githubIssuesURL != nil {
-                helpOptionButton(
+                let item = NSMenuItem(
                     title: String(localized: "sidebar.help.githubIssues", defaultValue: "GitHub Issues"),
-                    action: .githubIssues,
-                    accessibilityIdentifier: "SidebarHelpMenuOptionGitHubIssues",
-                    isExternalLink: true
+                    action: #selector(openGitHubIssues),
+                    keyEquivalent: ""
                 )
+                item.target = self
+                item.setAccessibilityIdentifier("SidebarHelpMenuOptionGitHubIssues")
+                menu.addItem(item)
             }
-            helpOptionButton(
+
+            menu.addItem(.separator())
+
+            let updateItem = NSMenuItem(
                 title: String(localized: "command.checkForUpdates.title", defaultValue: "Check for Updates"),
-                action: .checkForUpdates,
-                accessibilityIdentifier: "SidebarHelpMenuOptionCheckForUpdates",
-                isExternalLink: false
+                action: #selector(checkForUpdates),
+                keyEquivalent: ""
             )
+            updateItem.target = self
+            updateItem.setAccessibilityIdentifier("SidebarHelpMenuOptionCheckForUpdates")
+            menu.addItem(updateItem)
+
+            // Position the menu above the button
+            let point = NSPoint(x: 0, y: sender.bounds.maxY + 4)
+            menu.popUp(positioning: nil, at: point, in: sender)
         }
-        .padding(8)
-        .frame(minWidth: 200)
-    }
 
-    private func helpOptionButton(
-        title: String,
-        action: SidebarHelpMenuAction,
-        accessibilityIdentifier: String,
-        isExternalLink: Bool,
-        shortcutHint: String? = nil,
-        trailingSystemImage: String? = nil
-    ) -> some View {
-        Button {
-            isPopoverPresented = false
-            perform(action)
-        } label: {
-            HStack(spacing: 8) {
-                Text(title)
-                    .font(.system(size: 12))
-                Spacer(minLength: 0)
-                if let shortcutHint {
-                    helpOptionShortcutHint(text: shortcutHint)
-                }
-                if let trailingSystemImage {
-                    helpOptionTrailingIcon(systemName: trailingSystemImage)
-                }
-                if isExternalLink {
-                    helpOptionTrailingIcon(systemName: "arrow.up.right", size: 8)
-                }
-            }
-            .padding(.horizontal, 8)
-            .frame(height: 24)
-            .contentShape(Rectangle())
+        @objc private func sendFeedback() {
+            onSendFeedback()
         }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier(accessibilityIdentifier)
-    }
 
-    private func helpOptionShortcutHint(text: String) -> some View {
-        Text(text)
-            .lineLimit(1)
-            .fixedSize(horizontal: true, vertical: false)
-            .font(.system(size: 10, weight: .regular, design: .rounded))
-            .monospacedDigit()
-            .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-    }
-
-    private func helpOptionTrailingIcon(systemName: String, size: CGFloat = 13) -> some View {
-        Image(systemName: systemName)
-            .resizable()
-            .scaledToFit()
-            .frame(width: size, height: size)
-            .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-    }
-
-    private func perform(_ action: SidebarHelpMenuAction) {
-        switch action {
-        case .keyboardShortcuts:
+        @objc private func openKeyboardShortcuts() {
             Task { @MainActor in
                 if let appDelegate = AppDelegate.shared {
                     appDelegate.openPreferencesWindow(
@@ -7627,86 +7601,31 @@ private struct SidebarHelpMenuButton: View {
                     AppDelegate.presentPreferencesWindow(navigationTarget: .keyboardShortcuts)
                 }
             }
-        case .docs:
+        }
+
+        @objc private func openDocs() {
             guard let docsURL else { return }
             NSWorkspace.shared.open(docsURL)
-        case .changelog:
+        }
+
+        @objc private func openChangelog() {
             guard let changelogURL else { return }
             NSWorkspace.shared.open(changelogURL)
-        case .github:
+        }
+
+        @objc private func openGitHub() {
             guard let githubURL else { return }
             NSWorkspace.shared.open(githubURL)
-        case .githubIssues:
+        }
+
+        @objc private func openGitHubIssues() {
             guard let githubIssuesURL else { return }
             NSWorkspace.shared.open(githubIssuesURL)
-        case .checkForUpdates:
+        }
+
+        @objc private func checkForUpdates() {
             Task { @MainActor in
                 AppDelegate.shared?.checkForUpdates(nil)
-            }
-        case .sendFeedback:
-            isPopoverPresented = false
-            onSendFeedback()
-        }
-    }
-
-    private func decodeShortcut(from data: Data, fallback: StoredShortcut) -> StoredShortcut {
-        guard !data.isEmpty,
-              let shortcut = try? JSONDecoder().decode(StoredShortcut.self, from: data) else {
-            return fallback
-        }
-        return shortcut
-    }
-}
-
-/// Presents an NSPopover without an arrow using the shouldHideAnchor KVC trick.
-private struct ArrowlessPopoverAnchor<PopoverContent: View>: NSViewRepresentable {
-    @Binding var isPresented: Bool
-    let preferredEdge: NSRectEdge
-    @ViewBuilder let content: () -> PopoverContent
-
-    func makeNSView(context: Context) -> NSView {
-        NSView()
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        if isPresented {
-            guard context.coordinator.popover == nil else { return }
-
-            let popover = NSPopover()
-            popover.behavior = .semitransient
-            popover.animates = true
-            popover.setValue(true, forKeyPath: "shouldHideAnchor")
-            popover.contentViewController = NSHostingController(rootView: content())
-            popover.delegate = context.coordinator
-            context.coordinator.popover = popover
-
-            popover.show(relativeTo: nsView.bounds, of: nsView, preferredEdge: preferredEdge)
-        } else {
-            context.coordinator.dismiss()
-        }
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(isPresented: $isPresented)
-    }
-
-    final class Coordinator: NSObject, NSPopoverDelegate {
-        @Binding var isPresented: Bool
-        var popover: NSPopover?
-
-        init(isPresented: Binding<Bool>) {
-            _isPresented = isPresented
-        }
-
-        func dismiss() {
-            popover?.performClose(nil)
-            popover = nil
-        }
-
-        func popoverDidClose(_ notification: Notification) {
-            popover = nil
-            if isPresented {
-                isPresented = false
             }
         }
     }
